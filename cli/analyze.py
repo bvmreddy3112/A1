@@ -1,3 +1,16 @@
+import sys 
+if len(sys.argv)<3:
+    print("Usage: python analyze.py <logfile> <LEVEL> [top_n]")
+    sys.exit(1)
+
+log_file=sys.argv[1]
+level_filter=sys.argv[2]
+
+if len(sys.argv) >=4:
+    top_n = int(sys.argv[3])
+else:
+    top_n=3
+    
 
 class Logline:
     def __init__(self,line):
@@ -24,7 +37,7 @@ class Logline:
             return False
         return True
     
-file = open("app.log", "r")
+file = open(log_file, "r")
 errors={}
     
 for line in file:
@@ -34,7 +47,7 @@ for line in file:
     if not log.is_valid():
          continue
     
-    if log.level() == "ERROR":
+    if log.level() == level_filter:
         r=log.message()
         if r in errors:
             errors[r]+=1
