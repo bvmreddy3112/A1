@@ -37,7 +37,7 @@ class Logline:
             return False
         return True
     
-file = open(log_file, "r")
+file = open(log_file, "r") 
 errors={}
     
 for line in file:
@@ -55,11 +55,17 @@ for line in file:
             errors[r]=1
         print("raw line:",repr(line))  
         print("time:",log.timestamp())
-        print("level:","ERROR")
+        print("level:",log.level())
         print("message:",log.message())
         print("________________________")
-sort=sorted(errors.items(),key=lambda item : item [1], reverse=True)
-for r,value in sort:
+sorted_errors = sorted(errors.items(),key=lambda item : item [1], reverse=True)
+if(top_n>len(sorted_errors)):
+ for r,value in sorted_errors:
+    print(r,value)
+ print(f"Only {len(sorted_errors)} found , less than requested {top_n}")
+else:
+ top_list= sorted_errors[ : top_n ]
+ for r,value in top_list:
     print(r,value)
 file.close()
 
