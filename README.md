@@ -12,3 +12,7 @@ A Python tool to parse logs and summarize error frequency.
 
 Usage:
 python analyze.py app.log ERROR
+
+Day - 6
+
+Sorted the levels in descending order and sliced if the user needs top n levels .
