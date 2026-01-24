@@ -1,27 +1,33 @@
 import sys
+import argparse
 
 def parse_args():
-   if len(sys.argv)<3:
-     print("Usage: python analyze.py <logfile> <LEVEL> [top_n]")
-     sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Analyze log files and find most frequent error messages"
+    )
+    parser.add_argument("logfile", help="path to log file")
+    parser.add_argument(
+       "--level",
+       action="append",
+       required=True,
+       help="Log level to filter (can be used multiple times, e.g. --level ERROR --level INFO)"
+    )
+    parser.add_argument(
+        "--top",
+        type=int,
+        default=3,
+        help="Number of top results to show (default: 3)"
+    )
+    parser.add_argument("--stats",action="store_true",help="Show processing statistics")
+    parser.add_argument("--quiet",action="store_true",help="show top errors only")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output results in JSON format",
+    )
+    args = parser.parse_args()
 
-   log_file=sys.argv[1]
-   level_filter=sys.argv[2]
-
-   if len(sys.argv) >=4:
-    try:
-     top_n = int(sys.argv[3])
-     if(top_n<=0):
-        print("Error: top_n must be a positive integer")
-        sys.exit(1)
-    except ValueError:
-       print("Error: top_n must be an integer")
-       sys.exit(1)
-   else:
-    top_n=3
-
-   return log_file , level_filter , top_n
-
+    return args.logfile, args.level, args.top , args.stats , args.quiet ,args.json
 
 class Logline:
     def __init__(self,line):
@@ -46,43 +52,75 @@ class Logline:
         parts = self.line.split(" ")
         if len(parts)<4:
             return False
+        if "-" not in parts[0] or ":" not in parts[1]:
+            return False
         return True
     
-
-
-def process_file(log_file , level_filter):
+def process_file(log_file , levels , quiet , json_flag):
   errors={}
   try:
    with open(log_file,"r") as file:
+    total_lines=0
+    valid_lines=0
+    invalid_lines=0
+    matched_lines=0
    
     for line in file:
-    
+     total_lines+=1
 
      log=Logline(line)
      if not log.is_valid():
+         invalid_lines+=1
          continue
-    
-     if log.level() == level_filter:
+     valid_lines+=1
+        
+     if log.level() in levels:
+        matched_lines+=1
         r=log.message()
         if r in errors:
             errors[r]+=1
         else:
             errors[r]=1
-        print("raw line:",repr(line))  
-        print("time:",log.timestamp())
-        print("level:",log.level())
-        print("message:",log.message())
-        print("________________________")
+        if not quiet and not json_flag:       
+         print("raw line:",repr(line))  
+         print("time:",log.timestamp())
+         print("level:",log.level())
+         print("message:",log.message())
+         print("________________________")
 
   except FileNotFoundError:
     print("Error: Log file not found")
     sys.exit(1)
-  return errors
-def print_results(errors,level_filter,top_n):
+
+  stats={
+     "total lines": total_lines,
+     "valid lines": valid_lines,
+     "invalid lines": invalid_lines,
+     "matched lines": matched_lines
+  }
+  return errors,stats
+
+def print_results(errors,levels,top_n,json_flag):
   if len(errors)==0:
-        print(f"no logs found for level:{level_filter}")
+        print(f"no logs found for levels: {','.join(levels)}")
         return 
-    
+  if json_flag:
+     import json
+     sorted_errors = sorted(errors.items(),key=lambda item : item [1], reverse=True)
+     top_list = sorted_errors[:top_n]
+
+     data = {
+        "level": levels,
+        "top_n": top_n,
+        "results": [
+           {"message": msg , "count": count}
+           for msg ,count in top_list
+        ]
+     } 
+
+     print(json.dumps(data, indent=2))
+     return 
+  
   sorted_errors = sorted(errors.items(),key=lambda item : item [1], reverse=True)
   if top_n>len(sorted_errors):
     for r,value in sorted_errors:
@@ -95,11 +133,16 @@ def print_results(errors,level_filter,top_n):
     for r,value in top_list:
         print(r,value)
  
-
 def main():
- log_file,level_filter,top_n=parse_args()
- errors=process_file(log_file,level_filter)
- print_results(errors,level_filter,top_n)
+ log_file,level_filter,top_n,show_stats,quiet,json_flag=parse_args()
+ errors,stats=process_file(log_file,level_filter,quiet,json_flag)
+ print_results(errors,level_filter,top_n,json_flag)
+ if show_stats and not json_flag:
+    print("stats:")
+    print(f" Total Lines : {stats['total lines']}")
+    print(f" Valid Lines : {stats['valid lines']}")
+    print(f" Invalid Lines : {stats['invalid lines']}")
+    print(f" matched Lines : {stats['matched lines']}")
 if __name__ =="__main__":
  main()
 
