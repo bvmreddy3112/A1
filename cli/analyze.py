@@ -1,5 +1,16 @@
 import sys
 import argparse
+from datetime import datetime 
+
+def parse_time(t):
+   if t is None:
+      return None
+   try:
+      return datetime.strptime(t, "%Y-%m-%d %H:%M:%S")
+   except ValueError:
+      print(f"Invalid time format: {t}")
+      print("Expected format: YYYY-MM-DD HH:MM:SS")
+      sys.exit(1)
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -25,9 +36,19 @@ def parse_args():
         action="store_true",
         help="Output results in JSON format",
     )
+    parser.add_argument(
+       "--since",
+       help="Start time filter (format: YYYY-MM-DD HH:MM:SS)",
+    )
+
+    parser.add_argument(
+       "--until",
+       help="End time filter (format: YYYY-MM-DD HH:MM:SS)",
+    )
+
     args = parser.parse_args()
 
-    return args.logfile, args.level, args.top , args.stats , args.quiet ,args.json
+    return args.logfile, args.level, args.top , args.stats , args.quiet ,args.json , args.since , args.until
 
 class Logline:
     def __init__(self,line):
@@ -56,7 +77,13 @@ class Logline:
             return False
         return True
     
-def process_file(log_file , levels , quiet , json_flag):
+    def timestamp_dt(self):
+       try:
+          return datetime.strptime(self.timestamp(), "%Y-%m-%d %H:%M:%S")
+       except ValueError:
+          return None
+    
+def process_file(log_file , levels , quiet , json_flag, since_time,until_time):
   errors={}
   try:
    with open(log_file,"r") as file:
@@ -72,7 +99,19 @@ def process_file(log_file , levels , quiet , json_flag):
      if not log.is_valid():
          invalid_lines+=1
          continue
+    
+
+     log_time=log.timestamp_dt()
+     if log_time is None:
+        invalid_lines+=1
+        continue
      valid_lines+=1
+
+     if since_time and log_time < since_time:
+        continue
+     if until_time and log_time > until_time:
+        continue
+        
         
      if log.level() in levels:
         matched_lines+=1
@@ -134,8 +173,13 @@ def print_results(errors,levels,top_n,json_flag):
         print(r,value)
  
 def main():
- log_file,level_filter,top_n,show_stats,quiet,json_flag=parse_args()
- errors,stats=process_file(log_file,level_filter,quiet,json_flag)
+ log_file,level_filter,top_n,show_stats,quiet,json_flag,since_string,until_string=parse_args()
+ since_time=parse_time(since_string)
+ until_time=parse_time(until_string)
+ if since_time and until_time and since_time > until_time:
+    print("Error: --since must be earlier than --until")
+    sys.exit(1)
+ errors,stats=process_file(log_file,level_filter,quiet,json_flag,since_time,until_time)
  print_results(errors,level_filter,top_n,json_flag)
  if show_stats and not json_flag:
     print("stats:")
