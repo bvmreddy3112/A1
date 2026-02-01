@@ -1,6 +1,13 @@
 import sys
 import argparse
 from datetime import datetime 
+class LogRecord:
+   def __init__(self , timestamp ,  level , message , raw_line):
+      self.timestamp = timestamp
+      self.level = level
+      self.message = message
+      self.raw_line= raw_line
+
 
 def parse_time(t):
    if t is None:
@@ -45,67 +52,73 @@ def parse_args():
        "--until",
        help="End time filter (format: YYYY-MM-DD HH:MM:SS)",
     )
+    parser.add_argument(
+       "--verbose",
+       action="store_true",
+       help="show detailed log lines",
+    )
+    parser.add_argument(
+       "--format",
+       default="simple",
+       choices=["simple"],
+       help="Log format (default: simple)"
+    )
 
     args = parser.parse_args()
 
-    return args.logfile, args.level, args.top , args.stats , args.quiet ,args.json , args.since , args.until
+    return args.logfile, args.level, args.top , args.stats , args.quiet ,args.json , args.since , args.until , args.verbose , args.format,
+class SimpleLogParser:
+ def parse(self , line):
+   parts = line.strip().split(" ")
 
-class Logline:
-    def __init__(self,line):
-        self.line = line.strip()
+   if len(parts)< 4:
+      return None
+   
+   try:
+      timestamp_str= parts[0]+" "+parts[1]
+      timestamp = datetime.strptime(timestamp_str,"%Y-%m-%d %H:%M:%S")
+   except ValueError:
+      return None
+   
+   level = parts[2]
+   message = " " .join(parts[3:])
 
-    def timestamp(self):
-        parts = self.line.split(" ")
-        return parts[0]+" "+parts[1]
-    
-    def level(self):
-        parts = self.line.split(" ")
-        if len(parts)<3:
-            return None
-        return parts[2]
+   return LogRecord(
+      timestamp=timestamp,
+      level=level,
+      message=message,
+      raw_line=line
 
-    def message(self):
-        parts =self.line.split(" ")
-        return " ".join(parts[3:])
-        
+   )
 
-    def is_valid(self):
-        parts = self.line.split(" ")
-        if len(parts)<4:
-            return False
-        if "-" not in parts[0] or ":" not in parts[1]:
-            return False
-        return True
-    
-    def timestamp_dt(self):
-       try:
-          return datetime.strptime(self.timestamp(), "%Y-%m-%d %H:%M:%S")
-       except ValueError:
-          return None
-    
-def process_file(log_file , levels , quiet , json_flag, since_time,until_time):
+
+def process_file(log_file , levels , quiet , json_flag, since_time,until_time,log_format):
   errors={}
+  matched_logs =[]
+  parser=SimpleLogParser()
+
+  if log_format=="simple":
+     parser=SimpleLogParser()
+  else:
+     print(f"Unsupported log format: {log_format}")
+     sys.exit(1)
+
   try:
    with open(log_file,"r") as file:
-    total_lines=0
-    valid_lines=0
-    invalid_lines=0
-    matched_lines=0
-   
+    total_lines=valid_lines=invalid_lines=matched_lines=0
+    
     for line in file:
      total_lines+=1
 
-     log=Logline(line)
-     if not log.is_valid():
+     record=parser.parse(line)
+     if record is None:
          invalid_lines+=1
          continue
-    
-
-     log_time=log.timestamp_dt()
-     if log_time is None:
-        invalid_lines+=1
-        continue
+     
      valid_lines+=1
+
+     log_time=record.timestamp
+     
 
      if since_time and log_time < since_time:
         continue
@@ -113,19 +126,10 @@ def process_file(log_file , levels , quiet , json_flag, since_time,until_time):
         continue
         
         
-     if log.level() in levels:
+     if record.level in levels:
         matched_lines+=1
-        r=log.message()
-        if r in errors:
-            errors[r]+=1
-        else:
-            errors[r]=1
-        if not quiet and not json_flag:       
-         print("raw line:",repr(line))  
-         print("time:",log.timestamp())
-         print("level:",log.level())
-         print("message:",log.message())
-         print("________________________")
+        errors[record.message] =errors.get(record.message,0)+1
+        matched_logs.append(record)
 
   except FileNotFoundError:
     print("Error: Log file not found")
@@ -137,7 +141,7 @@ def process_file(log_file , levels , quiet , json_flag, since_time,until_time):
      "invalid lines": invalid_lines,
      "matched lines": matched_lines
   }
-  return errors,stats
+  return errors,stats , matched_logs
 
 def print_results(errors,levels,top_n,json_flag):
   if len(errors)==0:
@@ -173,13 +177,22 @@ def print_results(errors,levels,top_n,json_flag):
         print(r,value)
  
 def main():
- log_file,level_filter,top_n,show_stats,quiet,json_flag,since_string,until_string=parse_args()
+ log_file,level_filter,top_n,show_stats,quiet,json_flag,since_string,until_string,verbose,log_format,=parse_args()
  since_time=parse_time(since_string)
  until_time=parse_time(until_string)
  if since_time and until_time and since_time > until_time:
     print("Error: --since must be earlier than --until")
     sys.exit(1)
- errors,stats=process_file(log_file,level_filter,quiet,json_flag,since_time,until_time)
+
+ errors,stats , matched_logs=process_file(log_file,level_filter,quiet,json_flag,since_time,until_time,log_format)
+
+ if verbose and not json_flag and not quiet:
+    for record in matched_logs:
+     print("time:", record.timestamp)
+     print("level:",record.level)
+     print("message:",record.message)
+     print("--------")
+
  print_results(errors,level_filter,top_n,json_flag)
  if show_stats and not json_flag:
     print("stats:")
